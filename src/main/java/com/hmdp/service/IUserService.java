@@ -7,6 +7,7 @@ import com.hmdp.entity.User;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
+import java.util.List;
 
 /**
  * <p>
@@ -26,4 +27,5 @@ public interface IUserService extends IService<User> {
 
     Result signCount();
 
+    List<Long> queryHotUser();
 }

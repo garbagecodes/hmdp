@@ -23,5 +23,5 @@ public interface IArticleService extends IService<Article> {
      */
     ArticleVO queryArticleById(Long articleId);
 
-    List<Article> queryHotArticle(Long total);
+    List<Long> queryHotArticle();
 }

@@ -7,13 +7,19 @@ import com.like.entity.LikeArticleCount;
 import com.like.entity.LikeUserCount;
 import com.like.mapper.ArticleMapper;
 import com.like.mapper.LikeUserCountMapper;
+import com.like.service.ILikeBehaviorService;
 import com.like.service.ILikeUserCountService;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+
+import static com.like.utils.RedisConstants.USER_LIKE_COUNT;
 
 @Service
 public class LikeUserCountServiceImpl extends ServiceImpl<LikeUserCountMapper, LikeUserCount> implements ILikeUserCountService {
@@ -22,6 +28,23 @@ public class LikeUserCountServiceImpl extends ServiceImpl<LikeUserCountMapper, L
     private LikeUserCountMapper likeUserCountMapper;
     @Resource
     private ArticleMapper articleMapper;
+    @Resource
+    private ILikeBehaviorService likeBehaviorService;
+
+    public Map<Long, Integer> queryBatchCount(List<Long> userIds){
+        Map<Long, Integer> counts = new HashMap<>();
+        List<Long> queryIds = new ArrayList<>();
+        for (Long userId: userIds) {
+            String count = likeBehaviorService.getCache(USER_LIKE_COUNT + userId);
+            if (count != null){
+                counts.put(userId,Integer.valueOf(count));
+            }else {
+                queryIds.add(userId);
+            }
+        }
+        counts.putAll(this.queryBatchCount(queryIds));
+        return counts;
+    }
 
     @Async
     public CompletableFuture<Void> updateBatchCount(List<LikeArticleCount> likeArticleCountList) {

@@ -9,6 +9,7 @@ import com.like.service.IArticleService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -31,7 +32,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
     }
 
     @Override
-    public List<Article> queryHotArticle(Long total) {
-        return null;
+    public List<Long> queryHotArticle() {
+        List<Long> hotList = new ArrayList<>();
+        hotList.add(1L);
+        hotList.add(2L);
+        hotList.add(5L);
+        return hotList;
     }
 }

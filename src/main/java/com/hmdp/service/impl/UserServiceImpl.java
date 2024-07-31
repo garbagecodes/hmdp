@@ -23,6 +23,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -194,6 +195,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             num >>>= 1;
         }
         return Result.ok(count);
+    }
+
+    @Override
+    public List<Long> queryHotUser() {
+        List<Long> hotUsers = new ArrayList<>();
+        hotUsers.add(1011L);
+        hotUsers.add(1L);
+        return hotUsers;
     }
 
     private User createUserWithPhone(String phone) {

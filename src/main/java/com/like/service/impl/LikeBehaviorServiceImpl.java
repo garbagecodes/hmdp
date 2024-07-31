@@ -2,29 +2,39 @@ package com.like.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.github.benmanes.caffeine.cache.CacheLoader;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.Event;
+import com.hmdp.service.IUserService;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
 import com.like.dto.LikeBehaviorDTO;
 import com.like.entity.LikeBehavior;
 import com.like.event.KafkaLikeProducer;
 import com.like.mapper.LikeBehaviorMapper;
+import com.like.service.IArticleService;
 import com.like.service.ILikeBehaviorService;
 import com.like.utils.BloomFilterService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.CacheManager;
+import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static com.like.utils.KafkaConstants.TOPIC_LIKE_BEHAVIOR;
 import static com.like.utils.RedisConstants.*;
@@ -39,12 +49,29 @@ public class LikeBehaviorServiceImpl extends ServiceImpl<LikeBehaviorMapper, Lik
     @Resource
     private KafkaLikeProducer kafkaLikeProducer;
     @Resource
-    private CacheManager cacheManager;
-    @Resource
     private BloomFilterService bloomFilterService;
     @Resource
     private RedisIdWorker redisIdWorker;
-
+    @Resource
+    private IArticleService articleService;
+    @Resource
+    private IUserService userService;
+    @Resource
+    private LoadingCache<String, String> cache;
+    @PostConstruct
+    public LoadingCache<String, String> init() {
+        return Caffeine.newBuilder()
+                .maximumSize(100)
+                .expireAfterWrite(2, TimeUnit.HOURS)
+                .build(new CacheLoader() {
+                    @Nullable
+                    @Override
+                    public Object load(@NonNull Object o) throws Exception {
+                        // 如果 key 不存在，返回 null
+                        return null;
+                    }
+                });
+    }
     @Override
     public Result like(LikeBehaviorDTO likeBehaviorDTO) {
 
@@ -87,12 +114,31 @@ public class LikeBehaviorServiceImpl extends ServiceImpl<LikeBehaviorMapper, Lik
             return Result.fail("数据异常");
         }
 
+        //新增：更新localcache
+        updateLocalCache(articleId,userId,diff);
+
         //6. 发送消息到kafka，上面将redis的数据暂时存为1，这里的kafka消费者最终会将数据统一
         Long behaviorId = redisIdWorker.nextId("like-behavior"); // 生成点赞行为ID
         sendLikeBehaviorMsg(behaviorId, articleId, userId, type);
 
         //7. 返回文章总获赞数量
         return Result.ok(articleCount);
+    }
+
+    private void updateLocalCache(Long articleId, Long userId, int diff) {
+        Integer articleCount = Integer.valueOf(cache.get(ARTICLE_LIKE_COUNT + articleId));
+        Integer userCount = Integer.valueOf(cache.get(USER_LIKE_COUNT + userId));
+        //只有缓存中已经有数据才会更新，如果本来就没有数据的则不会存入local cache
+        if (articleCount != null){
+            cache.put(ARTICLE_LIKE_COUNT + articleId,String.valueOf(articleCount + diff));
+        }
+        if (userCount != null) {
+            cache.put(USER_LIKE_COUNT + userId, String.valueOf(userCount + diff));
+        }
+    }
+
+    public String getCache(String key){
+        return cache.get(key);
     }
 
     private void updateRedisZset(Long articleId, Long userId, Integer type) {
@@ -201,5 +247,33 @@ public class LikeBehaviorServiceImpl extends ServiceImpl<LikeBehaviorMapper, Lik
         if (redisTemplate.opsForZSet().score(key, member) == null)
             return false;
         return true;
+    }
+
+    @Scheduled(fixedRate = 2 * 60 * 60 * 1000) // 每2小时执行一次
+    //@Scheduled(fixedRate = 2000)
+    public void pullHotArticleList() {
+        List<Long> hotArticles = articleService.queryHotArticle();
+        for (Long articleId : hotArticles) {
+            String key = ARTICLE_LIKE_COUNT + articleId;
+            String count = stringRedisTemplate.opsForValue().get(key);
+            if (count != null) {
+                cache.put(key, count);
+                log.info("成功缓存了热点文章信息");
+            }
+        }
+    }
+
+    @Scheduled(fixedRate = 2 * 60 * 60 * 1000) // 每2小时执行一次
+    //@Scheduled(fixedRate = 2000)
+    public void pullHotUserList() {
+        List<Long> hotUsers = userService.queryHotUser();
+        for (Long userId : hotUsers) {
+            String key = USER_LIKE_COUNT + userId;
+            String count = stringRedisTemplate.opsForValue().get(key);
+            if (count != null) {
+                cache.put(key, count);
+                log.info("成功缓存了热点用户信息");
+            }
+        }
     }
 }

@@ -42,7 +42,7 @@ public class ArticleController {
      */
     @GetMapping("/hot/{total}")
     public Result getHotArticle(@PathVariable Long total) {
-        return Result.ok(articleService.queryHotArticle(total));
+        return Result.ok(articleService.queryHotArticle());
     }
 
 }

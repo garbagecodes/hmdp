@@ -8,4 +8,6 @@ import com.like.entity.LikeBehavior;
 public interface ILikeBehaviorService extends IService<LikeBehavior> {
 
     Result like(LikeBehaviorDTO likeBehaviorDTO);
+
+    String getCache(String key);
 }
