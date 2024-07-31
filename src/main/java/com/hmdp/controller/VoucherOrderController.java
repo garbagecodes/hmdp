@@ -1,13 +1,10 @@
 package com.hmdp.controller;
 
 
+import com.hmdp.dto.OrderPaymentDTO;
 import com.hmdp.dto.Result;
 import com.hmdp.service.IVoucherOrderService;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 
@@ -25,8 +22,26 @@ public class VoucherOrderController {
     @Resource
     private IVoucherOrderService voucherOrderService;
 
-    @PostMapping("seckill/{id}")
+    @PostMapping("/common/{id}")
+    public Result commonlVoucher(@PathVariable("id") Long voucherId) {
+        int buyNumber = 1;
+        return voucherOrderService.commonVoucher(voucherId, buyNumber);
+    }
+
+    @PostMapping("/limit/{id}")
+    public Result limitlVoucher(@PathVariable("id") Long voucherId) {
+        int buyNumber = 1;
+        return voucherOrderService.limitVoucher(voucherId, buyNumber);
+    }
+
+    @PostMapping("/seckill/{id}")
     public Result seckillVoucher(@PathVariable("id") Long voucherId) {
-        return voucherOrderService.seckillVoucher(voucherId);
+        int buyNumber = 1;
+        return voucherOrderService.seckillVoucher(voucherId, buyNumber);
+    }
+
+    @PostMapping("/payment")
+    public Result payment(@RequestBody OrderPaymentDTO orderPaymentDTO) {
+        return voucherOrderService.payment(orderPaymentDTO);
     }
 }

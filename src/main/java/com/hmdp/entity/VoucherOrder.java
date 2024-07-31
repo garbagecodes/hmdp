@@ -48,6 +48,11 @@ public class VoucherOrder implements Serializable {
     private Integer payType;
 
     /**
+     * 购买数量
+     */
+    private Integer buyNumber;
+
+    /**
      * 订单状态，1：未支付；2：已支付；3：已核销；4：已取消；5：退款中；6：已退款
      */
     private Integer status;
@@ -76,6 +81,5 @@ public class VoucherOrder implements Serializable {
      * 更新时间
      */
     private LocalDateTime updateTime;
-
 
 }

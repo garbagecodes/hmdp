@@ -19,6 +19,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -46,21 +47,50 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     private StringRedisTemplate stringRedisTemplate;
 
     @Override
-    public Result sendCode(String phone, HttpSession session) {
+    public Result sendCode(String phone, HttpSession session, HttpServletRequest request) {
         // 1.校验手机号
         if (RegexUtils.isPhoneInvalid(phone)) {
             // 2.如果不符合，返回错误信息
             return Result.fail("手机号格式错误！");
         }
-        // 3.符合，生成验证码
-        String code = RandomUtil.randomNumbers(6);
+        String clientIpAddr = request.getRemoteAddr();// 获取客户端IP地址
 
-        // 4.保存验证码到 session
+        // 3.获取该手机号在redis中的锁和两个黑名单中保存的次数
+        String phoneGetCodeLock = stringRedisTemplate.opsForValue().get(GET_CODE_LOCK + phone);
+        String blacklistPhoneCount = stringRedisTemplate.opsForValue().get(GET_CODE_BLACKLIST_PHONE + phone);
+        String blacklistIpAddrCount = stringRedisTemplate.opsForValue().get(GET_CODE_BLACKLIST_IP_ADDR + clientIpAddr);
+
+        // 4.如果存在锁，直接返回失败
+        if (phoneGetCodeLock != null) {
+            return Result.fail("获取验证码过快，请稍后重试！");
+        }
+
+        // 5.此时必然不存在锁，则检查两个黑名单中的次数
+        int getCodePhoneCount = (blacklistPhoneCount != null) ? Integer.parseInt(blacklistPhoneCount) : 1;
+        if (getCodePhoneCount >= 400) {
+            return Result.fail("获取验证码次数过多，您的手机号已被限制！");
+        }
+
+        int getCodeIpAddrCount = (blacklistIpAddrCount != null) ? Integer.parseInt(blacklistIpAddrCount) : 1;
+        if (getCodeIpAddrCount >= 300) {
+            return Result.fail("获取验证码次数过多，您的IP已被限制！");
+        }
+
+        // 6.更新锁和黑名单
+        stringRedisTemplate.opsForValue().set(GET_CODE_BLACKLIST_PHONE + phone, String.valueOf(getCodePhoneCount), REFRESH_BLACKLIST_TTL, TimeUnit.HOURS);
+        stringRedisTemplate.opsForValue().set(GET_CODE_BLACKLIST_IP_ADDR + clientIpAddr, String.valueOf(getCodeIpAddrCount), REFRESH_BLACKLIST_TTL, TimeUnit.HOURS);
+        stringRedisTemplate.opsForValue().set(GET_CODE_LOCK + phone, "1", GET_CODE_LOCK_TTL, TimeUnit.MINUTES);
+
+        // 7.校验通过，生成验证码
+//        String code = RandomUtil.randomNumbers(6);
+        String code = "123123"; //为了方便测试，改成固定值
+
+        // 8.保存验证码到 redis，并上锁
         stringRedisTemplate.opsForValue().set(LOGIN_CODE_KEY + phone, code, LOGIN_CODE_TTL, TimeUnit.MINUTES);
 
-        // 5.发送验证码
+        // 9.发送验证码
         log.debug("发送短信验证码成功，验证码：{}", code);
-        // 返回ok
+        // 10.返回ok
         return Result.ok();
     }
 
@@ -102,7 +132,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         String tokenKey = LOGIN_USER_KEY + token;
         stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
         // 7.4.设置token有效期
-        stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.MINUTES);
+        stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.HOURS);
 
         // 8.返回token
         return Result.ok(token);
@@ -175,4 +205,5 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         save(user);
         return user;
     }
+
 }

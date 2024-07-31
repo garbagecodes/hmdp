@@ -5,11 +5,11 @@ spring:
     name: hmdp
   datasource:
     driver-class-name: com.mysql.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3306/hmdp?useSSL=false&serverTimezone=UTC
-    username: root
+    url: jdbc:mysql://192.168.76.129:3306/hmdp?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: admin
     password: 123
   redis:
-    host: 192.168.150.101
+    host: 192.168.76.129
     port: 6379
     password: 123321
     lettuce:
@@ -20,10 +20,26 @@ spring:
         time-between-eviction-runs: 10s
   jackson:
     default-property-inclusion: non_null # JSON处理时忽略非空字段
+  kafka:
+      bootstrap-servers: 192.168.76.129:9092
+      producer:
+        retries: 10
+        key-serializer: org.apache.kafka.common.serialization.StringSerializer
+        value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      consumer:
+        group-id: ${spring.application.name}-test
+        key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+        value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      listener:
+        ack-mode: manual
+
 mybatis-plus:
-  type-aliases-package: com.hmdp.entity # 别名扫描包
+  type-aliases-package: com.hmdp.entity,com.like.entity # 别名扫描包
 logging:
   level:
     com.hmdp: debug
   pattern:
     dateformat: mm:ss.SSS
+kafka:
+  hosts: 192.168.76.129:9092
+  group: ${spring.application.name}
