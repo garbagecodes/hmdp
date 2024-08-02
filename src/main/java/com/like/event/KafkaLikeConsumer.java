@@ -21,8 +21,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static com.like.utils.KafkaConstants.FLUSH_MSG_NUM_LIMIT;
 import static com.like.utils.KafkaConstants.TOPIC_LIKE_BEHAVIOR;
+import static com.like.utils.KafkaConstants.TOPIC_SAVE_DB_FAILED;
 
 @Component
 @Slf4j
@@ -33,10 +33,12 @@ public class KafkaLikeConsumer {
     private ILikeArticleCountService likeArticleCountService;
     @Resource
     private ILikeUserCountService likeUserCountService;
-    private final List<LikeBehavior> likeBehaviorBuffer = new ArrayList<>(); // 存储接收到的消息
-    private final Map<String,Integer> articleCountBuffer = new HashMap<>();
-    private final Map<String,Integer> userCountBuffer = new HashMap<>();
-    private final Map<LikeBehavior,Acknowledgment> acks = new HashMap<>();
+    @Resource
+    private KafkaLikeProducer kafkaLikeProducer;
+//    private final List<LikeBehavior> likeBehaviorBuffer = new ArrayList<>(); // 存储接收到的消息
+    private final Map<String, Integer> articleCountBuffer = new HashMap<>();
+    private final Map<String, Integer> userCountBuffer = new HashMap<>();
+    private final Map<LikeBehavior, Acknowledgment> acks = new HashMap<>();
 
     @KafkaListener(topics = TOPIC_LIKE_BEHAVIOR)
     public void likeBehaviorMsgConsumer(ConsumerRecord record, Acknowledgment ack) {
@@ -53,36 +55,82 @@ public class KafkaLikeConsumer {
         }
 
         //2. 提取点赞行为数据
-        Map<String,Object> data= event.getData();
+        Map<String, Object> data = event.getData();
         Long articleId = Long.valueOf(data.get("articleId").toString());
         Long userId = event.getUserId();
         Integer type = Integer.valueOf(data.get("type").toString());
         Long behaviorId = Long.valueOf(data.get("behaviorId").toString());
+        LocalDateTime time = LocalDateTime.now();
 
         LikeBehavior likeBehavior = new LikeBehavior()
                 .setBehaviorId(behaviorId)
                 .setUserId(userId)
                 .setArticleId(articleId)
                 .setType(type)
-                .setTime(LocalDateTime.now());
-        likeBehaviorBuffer.add(likeBehavior);
-        //3. 统计文章和用户获赞的总数量
-        int diff = type ==1?1:-1;
-        articleCountBuffer.put(articleId.toString(),articleCountBuffer.getOrDefault(articleId.toString(),0)+diff);
-        userCountBuffer.put(userId.toString(),userCountBuffer.getOrDefault(userId.toString(),0)+diff);
+                .setTime(time);
 
-        // 如果消息数量达到上限，立即执行flush
-        if (likeBehaviorBuffer.size() >= FLUSH_MSG_NUM_LIMIT) {
-            flush();
+        // 3. 插入数据库
+        int tryCount = 0;
+        try {
+            while (!likeBehaviorService.save(likeBehavior)) {
+                if (++tryCount < 100) {
+                    Thread.sleep(100);
+                }
+            }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } finally {
+            if (tryCount >= 100) {
+                Map<String, Object> likeData = new HashMap<>();
+                likeData.put("behaviorId", behaviorId);
+                likeData.put("articleId", articleId);
+                likeData.put("type",type);
+                likeData.put("time", time);
+                Event saveDBFailedEvent = new Event()
+                        .setUserId(userId)
+                        .setTopic(TOPIC_SAVE_DB_FAILED)
+                        .setData(likeData);
+                kafkaLikeProducer.publishEvent(saveDBFailedEvent);
+            }
         }
 
-        //保存acks
+        //4. 统计文章和用户获赞的总数量
+        int diff = type == 1 ? 1 : -1;
+        articleCountBuffer.put(articleId.toString(), articleCountBuffer.getOrDefault(articleId.toString(), 0) + diff);
+        userCountBuffer.put(userId.toString(), userCountBuffer.getOrDefault(userId.toString(), 0) + diff);
+
+        //5. 保存acks
         acks.put(likeBehavior, ack);
     }
 
-    @Scheduled(fixedRate = 1000) // 每1秒执行一次
+    @KafkaListener(topics = TOPIC_SAVE_DB_FAILED)
+    public void saveDBFailedMsgConsumer(ConsumerRecord record, Acknowledgment ack) {
+        //1. 消息校验
+        if (record == null || record.value() == null) {
+            log.error("消息的内容为空!");
+            return;
+        }
+
+        Event event = JSONObject.parseObject(record.value().toString(), Event.class);
+        if (event == null) {
+            log.error("消息格式错误!");
+            return;
+        }
+
+        //2. 提取点赞行为数据
+        Map<String, Object> data = event.getData();
+        Long articleId = Long.valueOf(data.get("articleId").toString());
+        Long userId = event.getUserId();
+        articleCountBuffer.put(articleId.toString(), articleCountBuffer.getOrDefault(articleId.toString(), 0)-1);
+        userCountBuffer.put(userId.toString(), userCountBuffer.getOrDefault(userId.toString(), 0)-1);
+
+
+        //3. 给上层发消息
+        //sendMsgToApp(JSONObject.parseObject(data.toString(), LikeBehavior.class));
+    }
+
+    @Scheduled(fixedRate = 3000) // 每3秒执行一次
     private void flush() {
-        likeBehaviorBatchInsert();
         updateLikeCount();
         for (Map.Entry<LikeBehavior, Acknowledgment> entry : acks.entrySet()) {
             Acknowledgment acknowledgment = entry.getValue();
@@ -105,11 +153,11 @@ public class KafkaLikeConsumer {
         }
     }
 
-    private void likeBehaviorBatchInsert() {
-        // 批量写入数据库
-        if (!likeBehaviorBuffer.isEmpty()) {
-            likeBehaviorService.saveBatch(likeBehaviorBuffer);
-            likeBehaviorBuffer.clear(); // 清空缓冲区
-        }
-    }
+//    private void likeBehaviorBatchInsert() {
+//        // 批量写入数据库
+//        if (!likeBehaviorBuffer.isEmpty()) {
+//            likeBehaviorService.saveBatch(likeBehaviorBuffer);
+//            likeBehaviorBuffer.clear(); // 清空缓冲区
+//        }
+//    }
 }
