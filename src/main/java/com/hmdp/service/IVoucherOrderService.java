@@ -24,4 +24,6 @@ public interface IVoucherOrderService extends IService<VoucherOrder> {
     Result commonVoucher(Long voucherId, int buyNumber);
 
     Result limitVoucher(Long voucherId, int buyNumber);
+    Result limitVoucher1(Long voucherId, int buyNumber);
+    Result limitVoucher2(Long voucherId, int buyNumber);
 }
