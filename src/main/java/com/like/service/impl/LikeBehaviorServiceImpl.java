@@ -98,34 +98,44 @@ public class LikeBehaviorServiceImpl extends ServiceImpl<LikeBehaviorMapper, Lik
             }
         }
 
-        //3.增加点赞记录到redis zset
-        updateRedisZset(articleId,userId,type);
-
-        int diff = type == 1 ? 1 : -1;
-
-        //4.更新Redis count，并获取文章获赞总数
-        int articleCount = updateRedisLikeCount(ARTICLE_LIKE_COUNT + articleId, diff);
-        if (articleCount == -1) {
-            return Result.fail("数据异常");
-        }
-
-        //5.更新Redis count，获取redis作者获赞总数
-        if (updateRedisLikeCount(USER_LIKE_COUNT + userId, diff) == -1) {
-            return Result.fail("数据异常");
-        }
-
-        //新增：更新localcache
-        updateLocalCache(articleId,userId,diff);
+//        int diff = type == 1 ? 1 : -1;
+//
+//        // 更新redis
+//        updateRedis(articleId, userId, type, diff);
+//
+//        //新增：更新localcache
+//        updateLocalCache(articleId,userId,diff);
 
         //6. 发送消息到kafka，上面将redis的数据暂时存为1，这里的kafka消费者最终会将数据统一
         Long behaviorId = redisIdWorker.nextId("like-behavior"); // 生成点赞行为ID
         sendLikeBehaviorMsg(behaviorId, articleId, userId, type);
 
-        //7. 返回文章总获赞数量
-        return Result.ok(articleCount);
+        //7. 返回成功
+        return Result.ok();
     }
 
-    private void updateLocalCache(Long articleId, Long userId, int diff) {
+    @Async
+    public void updateRedis(Long articleId, Long userId, Integer type, int diff) {
+        //3.增加点赞记录到redis zset
+        updateRedisZset(articleId, userId, type);
+
+        //4.更新Redis count，并获取文章获赞总数
+        if (updateRedisLikeCount(ARTICLE_LIKE_COUNT + articleId, diff) == -1) {
+            log.info("文章获赞总数数据异常，准备删除异常的redis数据...");
+            redisTemplate.delete(ARTICLE_LIKE_COUNT + articleId);
+            log.info("异常数据删除成功！");
+        }
+
+        //5.更新Redis count，获取redis作者获赞总数
+        if (updateRedisLikeCount(USER_LIKE_COUNT + userId, diff) == -1) {
+            log.info("作者获赞总数数据异常，准备删除异常的redis数据...");
+            redisTemplate.delete(USER_LIKE_COUNT + userId);
+            log.info("异常数据删除成功！");
+        }
+    }
+
+    @Async
+    public void updateLocalCache(Long articleId, Long userId, int diff) {
         Integer articleCount = Integer.valueOf(cache.get(ARTICLE_LIKE_COUNT + articleId));
         Integer userCount = Integer.valueOf(cache.get(USER_LIKE_COUNT + userId));
         //只有缓存中已经有数据才会更新，如果本来就没有数据的则不会存入local cache
@@ -141,6 +151,16 @@ public class LikeBehaviorServiceImpl extends ServiceImpl<LikeBehaviorMapper, Lik
         return cache.get(key);
     }
 
+    @Override
+    public boolean saveLikeLog(LikeBehavior likeBehavior) {
+        if (!save(likeBehavior)){
+            return false;
+        }
+        updateRedis(likeBehavior.getArticleId(),likeBehavior.getUserId(),likeBehavior.getType(),likeBehavior.getType() == 1 ? 1 : -1);
+        updateLocalCache(likeBehavior.getArticleId(),likeBehavior.getUserId(),likeBehavior.getType() == 1 ? 1 : -1);
+        return true;
+    }
+
     private void updateRedisZset(Long articleId, Long userId, Integer type) {
         //1. 判断操作类型为点赞还是取消赞
         String userLikeZsetKey = USER_LIKE_ZSET_KEY + userId;
@@ -150,11 +170,17 @@ public class LikeBehaviorServiceImpl extends ServiceImpl<LikeBehaviorMapper, Lik
             // 获取当前时间戳作为score
             double score = Instant.now().getEpochSecond();
             //记录用户点赞列表，zset用于用户查询点赞列表
-            redisTemplate.opsForZSet().add(userLikeZsetKey, articleId, score);
+            if (!redisTemplate.opsForZSet().add(userLikeZsetKey, articleId, score)) {
+                log.info("添加点赞记录到文章zset失败，准备删除相关数据");
+                redisTemplate.delete(userLikeZsetKey);
+            }
             trimLikeZsetList(userLikeZsetKey); //异步裁剪zset长度为固定200以内，更多数据需要查询数据库
 
             //记录文章点赞列表，zset用于查询文章点赞列表
-            redisTemplate.opsForZSet().add(articleLikeZsetKey, articleId, score);
+            if (!redisTemplate.opsForZSet().add(articleLikeZsetKey, articleId, score)) {
+                log.info("添加点赞记录到用户zset失败，准备删除相关数据");
+                redisTemplate.delete(articleLikeZsetKey);
+            }
             trimLikeZsetList(articleLikeZsetKey);//异步裁剪zset长度为固定200以内，更多数据需要查询数据库
 
         }else {

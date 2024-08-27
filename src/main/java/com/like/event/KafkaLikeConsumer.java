@@ -72,7 +72,7 @@ public class KafkaLikeConsumer {
         // 3. 插入数据库
         int tryCount = 0;
         try {
-            while (!likeBehaviorService.save(likeBehavior)) {
+            while (!likeBehaviorService.saveLikeLog(likeBehavior)) {
                 if (++tryCount < 100) {
                     Thread.sleep(100);
                 }
@@ -99,8 +99,8 @@ public class KafkaLikeConsumer {
         articleCountBuffer.put(articleId.toString(), articleCountBuffer.getOrDefault(articleId.toString(), 0) + diff);
         userCountBuffer.put(userId.toString(), userCountBuffer.getOrDefault(userId.toString(), 0) + diff);
 
-        //5. 保存acks
-        acks.put(likeBehavior, ack);
+        //5. 确认
+        ack.acknowledge();
     }
 
     @KafkaListener(topics = TOPIC_SAVE_DB_FAILED)
@@ -124,7 +124,6 @@ public class KafkaLikeConsumer {
         articleCountBuffer.put(articleId.toString(), articleCountBuffer.getOrDefault(articleId.toString(), 0)-1);
         userCountBuffer.put(userId.toString(), userCountBuffer.getOrDefault(userId.toString(), 0)-1);
 
-
         //3. 给上层发消息
         //sendMsgToApp(JSONObject.parseObject(data.toString(), LikeBehavior.class));
     }
@@ -132,11 +131,6 @@ public class KafkaLikeConsumer {
     @Scheduled(fixedRate = 3000) // 每3秒执行一次
     private void flush() {
         updateLikeCount();
-        for (Map.Entry<LikeBehavior, Acknowledgment> entry : acks.entrySet()) {
-            Acknowledgment acknowledgment = entry.getValue();
-            acknowledgment.acknowledge();
-        }
-        acks.clear();
     }
 
     private void updateLikeCount() {
@@ -153,11 +147,4 @@ public class KafkaLikeConsumer {
         }
     }
 
-//    private void likeBehaviorBatchInsert() {
-//        // 批量写入数据库
-//        if (!likeBehaviorBuffer.isEmpty()) {
-//            likeBehaviorService.saveBatch(likeBehaviorBuffer);
-//            likeBehaviorBuffer.clear(); // 清空缓冲区
-//        }
-//    }
 }

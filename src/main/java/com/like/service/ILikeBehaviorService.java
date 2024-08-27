@@ -10,4 +10,6 @@ public interface ILikeBehaviorService extends IService<LikeBehavior> {
     Result like(LikeBehaviorDTO likeBehaviorDTO);
 
     String getCache(String key);
+
+    boolean saveLikeLog(LikeBehavior likeBehavior);
 }
