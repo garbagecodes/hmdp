@@ -237,7 +237,7 @@ public class LikeBehaviorServiceImpl extends ServiceImpl<LikeBehaviorMapper, Lik
                 .setTopic(TOPIC_LIKE_BEHAVIOR)
                 .setUserId(userId)
                 .setData(data);
-        kafkaLikeProducer.publishEvent(event);
+        kafkaLikeProducer.publishLikeEvent(event);
     }
 
 
@@ -284,7 +284,7 @@ public class LikeBehaviorServiceImpl extends ServiceImpl<LikeBehaviorMapper, Lik
             String count = stringRedisTemplate.opsForValue().get(key);
             if (count != null) {
                 cache.put(key, count);
-                log.info("成功缓存了热点文章信息");
+                log.info("线程{}成功缓存了热点文章信息到本地缓存中",Thread.currentThread().getId());
             }
         }
     }
@@ -298,7 +298,7 @@ public class LikeBehaviorServiceImpl extends ServiceImpl<LikeBehaviorMapper, Lik
             String count = stringRedisTemplate.opsForValue().get(key);
             if (count != null) {
                 cache.put(key, count);
-                log.info("成功缓存了热点用户信息");
+                log.info("线程{}成功缓存了热点用户信息到本地缓存中",Thread.currentThread().getId());
             }
         }
     }

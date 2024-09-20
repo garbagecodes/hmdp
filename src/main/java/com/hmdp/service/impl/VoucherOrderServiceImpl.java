@@ -265,7 +265,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         Integer limitCount = limitVoucher.getLimitCount();
 
         // 创建锁对象
-        RLock redisLock = redissonClient.getLock("lock:voucher:" + voucherId);
+        RLock redisLock = redissonClient.getLock("lock:voucher:" + voucherId + userId);
 
         try {
 

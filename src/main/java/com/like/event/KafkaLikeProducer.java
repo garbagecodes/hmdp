@@ -17,4 +17,13 @@ public class KafkaLikeProducer {
         // 将事件发布到指定的主题
         kafkaTemplate.send(event.getTopic(), JSONObject.toJSONString(event));
     }
+
+    public void publishLikeEvent(Event event) {
+        Long userId = event.getUserId();
+        if (userId !=null) {
+            kafkaTemplate.send(event.getTopic(), userId, JSONObject.toJSONString(event));
+        }else {
+            return;
+        }
+    }
 }
