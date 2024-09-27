@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static com.hmdp.utils.KafkaConstants.TOPIC_CREATE_ORDER;
+import static com.hmdp.utils.KafkaConstants.TOPIC_SAVE_ORDER_FAILED;
 import static com.hmdp.utils.RedisConstants.SECKILL_ORDER_KEY;
 import static com.hmdp.utils.SystemConstants.MAX_BUY_LIMIT;
 
@@ -115,7 +116,20 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             // 7.创建订单
             voucherOrder.setCreateTime(LocalDateTime.now());
             voucherOrder.setUpdateTime(LocalDateTime.now());
-            save(voucherOrder);
+            if (!save(voucherOrder)) {
+                log.info("保存订单失败");
+                throw new Exception("保存订单失败");
+            }
+        } catch (Exception e) {
+            Map<String, Object> data = new HashMap<>();
+            data.put("voucherId", voucherId);
+            data.put("buyNumber", voucherOrder.getBuyNumber());
+            Event event = new Event()
+                    .setTopic(TOPIC_SAVE_ORDER_FAILED)
+                    .setUserId(userId)
+                    .setEntityId(voucherOrder.getId())
+                    .setData(data);
+            kafkaOrderProducer.publishEvent(event);
         } finally {
             // 释放锁
             redisLock.unlock();
@@ -167,7 +181,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     public void sendOrderMsgToKafka(long orderId, Long voucherId, Long userId, int buyNumber) {
-        // 触发评论事件
         Map<String, Object> data = new HashMap<>();
         data.put("voucherId", voucherId);
         data.put("buyNumber", buyNumber);
@@ -286,7 +299,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     .mapToInt(VoucherOrder::getBuyNumber)
                     .sum();
 
-            if (totalBuyNumber+buyNumber > limitCount){
+            if (totalBuyNumber + buyNumber > limitCount) {
                 return Result.fail("超过最大购买限制!");
             }
 
