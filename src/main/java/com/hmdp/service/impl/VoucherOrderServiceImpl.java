@@ -347,7 +347,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     public Result limitVoucher2(Long voucherId, int buyNumber) {
         Long userId = UserHolder.getUser().getId();
         // 创建锁对象
-        RLock redisLock = redissonClient.getLock("lock:order:" + userId);
+        RLock redisLock = redissonClient.getLock("lock:order:" + voucherId);
         // 尝试获取锁
         boolean isLock = redisLock.tryLock();
         // 判断
@@ -374,8 +374,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 // 扣减失败
                 return Result.fail("库存不足");
             }
-
-
             // 7.创建订单
             VoucherOrder voucherOrder = new VoucherOrder().setId(redisIdWorker.nextId("order"))
                     .setVoucherId(voucherId)
